@@ -13,11 +13,15 @@ const today = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now); //
 const off = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "longOffset" })
   .formatToParts(now).find((p) => p.type === "timeZoneName").value.replace("GMT", "") || "+00:00";
 const todayStart = `${today}T00:00:00${off}`;
+const dow = new Date(today + "T12:00:00Z").getUTCDay(); // 0 = Sunday
+const weekStartDate = new Date(Date.parse(today + "T12:00:00Z") - dow * 864e5).toISOString().slice(0, 10);
+const weekStart = `${weekStartDate}T00:00:00${off}`;
 
-const query = `query($login:String!, $from:DateTime!, $to:DateTime!){
+const query = `query($login:String!, $from:DateTime!, $weekFrom:DateTime!, $to:DateTime!){
   user(login:$login){
     name createdAt location company websiteUrl twitterUsername
     today: contributionsCollection(from:$from, to:$to){ contributionCalendar{ totalContributions } }
+    week: contributionsCollection(from:$weekFrom, to:$to){ contributionCalendar{ totalContributions } }
     contributionsCollection{
       totalCommitContributions
       contributionCalendar{ totalContributions weeks{ contributionDays{ contributionCount date weekday } } }
@@ -27,12 +31,21 @@ const query = `query($login:String!, $from:DateTime!, $to:DateTime!){
     }
   }
 }`;
-const res = await fetch("https://api.github.com/graphql", {
+let data, errors;
+for (let attempt = 1; ; attempt++) {
+  try {
+    const res = await fetch("https://api.github.com/graphql", {
   method: "POST",
   headers: { Authorization: `bearer ${TOKEN}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ query, variables: { login: LOGIN, from: todayStart, to: now.toISOString() } }),
+  body: JSON.stringify({ query, variables: { login: LOGIN, from: todayStart, weekFrom: weekStart, to: now.toISOString() } }),
 });
-const { data, errors } = await res.json();
+    ({ data, errors } = await res.json());
+    break;
+  } catch (e) {
+    if (attempt >= 3) throw e;
+    await new Promise((r) => setTimeout(r, 5000 * attempt)); // GitHub API hiccup: retry
+  }
+}
 if (errors) throw new Error(JSON.stringify(errors));
 const u = data.user;
 const cal = u.contributionsCollection.contributionCalendar;
@@ -52,6 +65,7 @@ const activeDays = days.filter((d) => d.contributionCount > 0).length;
 const avg = cal.totalContributions / Math.max(1, days.length);
 // calendar buckets are UTC-dated; this window is midnight→now in TZ and includes private-repo work
 const todayCount = u.today.contributionCalendar.totalContributions;
+const weekCount = u.week.contributionCalendar.totalContributions;
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const wdSum = Array(7).fill(0), wdN = Array(7).fill(0);
@@ -140,20 +154,21 @@ y += 8;
 right += `<text x="${IX}" y="${y}" font-size="12" fill="${C.dim}">— stats (last 12 months) —</text>`; y += 12;
 
 const tiles = [
-  [fmt(cal.totalContributions), "total contributions"],
-  [fmt(todayCount), "contributions today"],
+  [fmt(cal.totalContributions), "contributions"],
+  [fmt(todayCount), "today"],
+  [fmt(weekCount), "this week"],
   [`${streak}d`, "current streak"],
-  [fmt(bestDay.contributionCount), `best day · ${shortDate(bestDay.date)}`],
   [`${longest}d`, "longest streak"],
   [avg.toFixed(1), "avg / day"],
 ];
 const TH = 56;
+const fit = (str, fs) => ([...str].length * fs * 0.62 > TW - 28 ? ` textLength="${TW - 28}" lengthAdjust="spacingAndGlyphs"` : "");
 tiles.forEach(([v, l], i) => {
   const tx = IX + (i % 3) * (TW + TG), ty = y + Math.floor(i / 3) * (TH + TG);
   right += `<g class="pop" style="animation-delay:${0.5 + i * 0.12}s">
     <rect x="${tx}" y="${ty}" width="${TW}" height="${TH}" rx="6" fill="${C.panel}" stroke="${C.line}"/>
-    <text x="${tx + 12}" y="${ty + 27}" font-size="20" font-weight="700" fill="${C.green}">${esc(v)}</text>
-    <text x="${tx + 12}" y="${ty + 45}" font-size="10.5" fill="${C.dim}">${esc(l)}</text></g>`;
+    <text x="${tx + 14}" y="${ty + 28}" font-size="20" font-weight="700" fill="${C.green}"${fit(v, 20)}>${esc(v)}</text>
+    <text x="${tx + 14}" y="${ty + 45}" font-size="11" fill="${C.dim}"${fit(l, 11)}>${esc(l)}</text></g>`;
 });
 y += 2 * (TH + TG) + 14;
 
@@ -194,4 +209,4 @@ ${right}
 <text x="${W - 16}" y="${H - 10}" text-anchor="end" font-size="9.5" fill="${C.line}">updated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC</text>
 </svg>`;
 writeFileSync("assets/card.svg", svg);
-console.log(`card ${W}x${H} | total ${cal.totalContributions} | today ${todayCount} | streak ${streak}d | longest ${longest}d | best ${bestDay.contributionCount} on ${bestDay.date} | avg ${avg.toFixed(1)} | busiest ${WD[busiest]}`);
+console.log(`card ${W}x${H} | total ${cal.totalContributions} | today ${todayCount} | week ${weekCount} | streak ${streak}d | longest ${longest}d | best ${bestDay.contributionCount} on ${bestDay.date} | avg ${avg.toFixed(1)} | busiest ${WD[busiest]}`);
