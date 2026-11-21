@@ -164,7 +164,7 @@ topLangs.forEach(([name, l], i) => {
   bar += `<rect x="${lx}" y="${y}" width="${w}" height="10" fill="${l.color}"/>`;
   lx += w;
   const col = i % 3, row = Math.floor(i / 3);
-  legend += `<circle cx="${IX + 5 + col * 136}" cy="${y + 27 + row * 18}" r="4.5" fill="${l.color}"/><text x="${IX + 15 + col * 136}" y="${y + 31 + row * 18}" font-size="11.5" fill="${C.text}">${esc(name)} <tspan fill="${C.dim}">${((l.size / langTotal) * 100).toFixed(1)}%</tspan></text>`;
+  legend += `<circle cx="${IX + 5 + col * 136}" cy="${y + 27 + row * 18}" r="4.5" fill="${l.color}"/><text x="${IX + 15 + col * 136}" y="${y + 31 + row * 18}" font-size="11.5" fill="${C.text}">${esc(name.length > 11 ? name.slice(0, 10) + "…" : name)} <tspan fill="${C.dim}">${((l.size / langTotal) * 100).toFixed(1)}%</tspan></text>`;
 });
 right += `<clipPath id="lb"><rect x="${IX}" y="${y}" width="${RW}" height="10" rx="5"/></clipPath><g clip-path="url(#lb)">${bar}</g>${legend}`;
 y += 27 + Math.ceil(topLangs.length / 3) * 18;
